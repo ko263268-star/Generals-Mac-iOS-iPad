@@ -1,0 +1,35 @@
+workflows:
+  ios-vulkan:
+    name: iOS Vulkan
+    max_build_duration: 90
+    instance_type: mac_mini_m1
+    environment:
+      xcode: 16.0
+      vars:
+        GX_TEAM_ID: 7S264298H8
+        GX_BUNDLE_ID: me.ammaar.generalszh
+    scripts:
+      - name: Checkout submodules
+        script: |
+          git submodule update --init --recursive
+      - name: Install xcodegen
+        script: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Configure iOS Vulkan preset
+        script: |
+          cmake --preset ios-vulkan
+      - name: Build iOS Vulkan target
+        script: |
+          cmake --build build/ios-vulkan --parallel
+      - name: Prepare runtime dependencies
+        script: |
+          ./scripts/build/ios/fetch-moltenvk.sh
+          ./scripts/build/ios/stage-fonts.sh
+      - name: Package signed IPA
+        script: |
+          ./scripts/build/ios/package-ios-zh.sh
+    artifacts:
+      - build/ios-package/**/*.ipa
+      - build/ios-package/**/*.app
