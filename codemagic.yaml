@@ -1,13 +1,23 @@
 workflows:
   ios-vulkan:
     name: Generals iOS Vulkan
-    instance_type: mac_mini_m1
+    instance_type: mac_mini_m2
     max_build_duration: 120
 
     environment:
       xcode: latest
 
     scripts:
+      - name: Install build tools
+        script: |
+          brew install cmake ninja meson pkgconf xcodegen
+
+      - name: Install vcpkg
+        script: |
+          git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+          export VCPKG_ROOT="$HOME/vcpkg"
+
       - name: Initialize submodules
         script: |
           git submodule update --init --recursive
@@ -22,13 +32,15 @@ workflows:
 
       - name: Configure
         script: |
+          export VCPKG_ROOT="$HOME/vcpkg"
           cmake --preset ios-vulkan
 
       - name: Build
         script: |
-          cmake --build build/ios-vulkan --config Release --target z_generals
+          export VCPKG_ROOT="$HOME/vcpkg"
+          cmake --build build/ios-vulkan --config RelWithDebInfo --target z_generals
 
-      - name: Package unsigned IPA
+      - name: Package
         script: |
           ./scripts/build/ios/package-ios-zh.sh
 
