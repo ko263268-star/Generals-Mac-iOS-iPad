@@ -10,7 +10,7 @@ workflows:
     scripts:
       - name: Install build tools
         script: |
-          brew install cmake ninja meson pkgconf xcodegen
+          brew install cmake ninja meson pkgconf xcodegen glslang
 
       - name: Install vcpkg
         script: |
