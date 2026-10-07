@@ -6,30 +6,82 @@ workflows:
 
     environment:
       xcode: latest
+      vars:
+        VCPKG_FORCE_SYSTEM_BINARIES: "1"
+        VCPKG_FEATURE_FLAGS: "versions,manifests"
+        VCPKG_DEFAULT_TRIPLET: "arm64-ios"
+        VCPKG_OSX_SYSROOT: "iphoneos"
+        VCPKG_CMAKE_SYSTEM_NAME: "iOS"
+        VCPKG_OSX_DEPLOYMENT_TARGET: "16.0"
+        VCPKG_OSX_ARCHITECTURES: "arm64"
+        CMAKE_OSX_SYSROOT: "iphoneos"
+        CMAKE_OSX_DEPLOYMENT_TARGET: "16.0"
+        CMAKE_OSX_ARCHITECTURES: "arm64"
 
     scripts:
+
       - name: Install build tools
         script: |
+          set -e
           brew install cmake ninja meson pkgconf xcodegen glslang
+
+      - name: Prepare clean workspace
+        script: |
+          set -e
+
+          echo "==> Cleaning previous build state"
+
+          rm -rf build/ios-vulkan
+          rm -rf vcpkg_installed
+
+          rm -rf "$HOME/vcpkg"
+
+          rm -rf "$HOME/Library/Caches/vcpkg"
+          rm -rf "$HOME/.cache/vcpkg"
+
+          echo "==> Clean workspace ready"
 
       - name: Install vcpkg
         script: |
-          git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
-          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+          set -e
+
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+
+          "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
           export VCPKG_ROOT="$HOME/vcpkg"
+
+          echo "VCPKG_ROOT=$VCPKG_ROOT"
+
+          "$VCPKG_ROOT/vcpkg" version
 
       - name: Install LunarG Vulkan SDK
         script: |
+          set -e
+
           SDK_VERSION="1.4.363.0"
           SDK_ROOT="$HOME/VulkanSDK"
+
+          rm -rf "$SDK_ROOT"
+          rm -rf /tmp/vulkan-sdk
+          rm -f /tmp/vulkan-sdk.zip
+
+          echo "==> Downloading LunarG Vulkan SDK $SDK_VERSION"
 
           curl -fL \
             "https://sdk.lunarg.com/sdk/download/${SDK_VERSION}/mac/vulkansdk-macos-${SDK_VERSION}.zip" \
             -o /tmp/vulkan-sdk.zip
 
+          mkdir -p /tmp/vulkan-sdk
+
           unzip -q /tmp/vulkan-sdk.zip -d /tmp/vulkan-sdk
 
-          INSTALLER=$(find /tmp/vulkan-sdk -path "*/Contents/MacOS/*" -type f | head -1)
+          INSTALLER=$(find /tmp/vulkan-sdk \
+            -path "*/Contents/MacOS/*" \
+            -type f \
+            | head -1)
+
+          test -n "$INSTALLER"
 
           chmod +x "$INSTALLER"
 
@@ -44,35 +96,178 @@ workflows:
 
           echo "VULKAN_SDK=$VULKAN_SDK"
 
-          test -f "$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
+          test -d "$VULKAN_SDK"
+
+          test -f \
+            "$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
+
+          echo "==> Static MoltenVK iOS library verified"
 
       - name: Initialize submodules
         script: |
+          set -e
+
+          git submodule sync --recursive
           git submodule update --init --recursive
 
       - name: Fetch MoltenVK runtime
         script: |
+          set -e
+
           ./scripts/build/ios/fetch-moltenvk.sh
+
+          test -d \
+            "$HOME/GeneralsX/MoltenVK/MoltenVK/MoltenVK/dynamic/MoltenVK.xcframework/ios-arm64/MoltenVK.framework"
+
+          echo "==> MoltenVK runtime verified"
 
       - name: Stage fonts
         script: |
+          set -e
+
           ./scripts/build/ios/stage-fonts.sh
 
-      - name: Configure
+          test -d "$HOME/GeneralsX/ios-staging/fonts"
+
+      - name: Configure clean iOS build
         script: |
+          set -e
+
           export VCPKG_ROOT="$HOME/vcpkg"
           export VULKAN_SDK="$HOME/VulkanSDK/macOS"
-          cmake --preset ios-vulkan
 
-      - name: Build
+          export VCPKG_DEFAULT_TRIPLET="arm64-ios"
+          export VCPKG_TARGET_TRIPLET="arm64-ios"
+
+          export VCPKG_OSX_SYSROOT="iphoneos"
+          export VCPKG_CMAKE_SYSTEM_NAME="iOS"
+          export VCPKG_OSX_DEPLOYMENT_TARGET="16.0"
+          export VCPKG_OSX_ARCHITECTURES="arm64"
+
+          export CMAKE_OSX_SYSROOT="iphoneos"
+          export CMAKE_OSX_DEPLOYMENT_TARGET="16.0"
+          export CMAKE_OSX_ARCHITECTURES="arm64"
+
+          echo "========================================"
+          echo "iOS BUILD CONFIGURATION"
+          echo "========================================"
+          xcrun --sdk iphoneos --show-sdk-path
+          xcodebuild -version
+          cmake --version
+          ninja --version
+          echo "VCPKG_ROOT=$VCPKG_ROOT"
+          echo "VCPKG_TARGET_TRIPLET=$VCPKG_TARGET_TRIPLET"
+          echo "VCPKG_OSX_SYSROOT=$VCPKG_OSX_SYSROOT"
+          echo "CMAKE_OSX_SYSROOT=$CMAKE_OSX_SYSROOT"
+          echo "CMAKE_OSX_DEPLOYMENT_TARGET=$CMAKE_OSX_DEPLOYMENT_TARGET"
+          echo "========================================"
+
+          cmake --preset ios-vulkan \
+            -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DVCPKG_HOST_TRIPLET=arm64-osx \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Verify vcpkg iOS libraries
         script: |
+          set -e
+
+          FREETYPE="build/ios-vulkan/vcpkg_installed/arm64-ios/lib/libfreetype.a"
+
+          echo "==> Checking vcpkg output"
+
+          test -f "$FREETYPE"
+
+          echo "Found:"
+          ls -lh "$FREETYPE"
+
+          echo "==> Checking architecture"
+
+          TMPDIR_CHECK="$(mktemp -d)"
+
+          cd "$TMPDIR_CHECK"
+
+          ar -x "$OLDPWD/$FREETYPE"
+
+          OBJECT=$(find . -type f | head -1)
+
+          test -n "$OBJECT"
+
+          file "$OBJECT"
+
+          if file "$OBJECT" | grep -qi "Catalyst"; then
+            echo "ERROR: vcpkg produced a Mac Catalyst object."
+            exit 1
+          fi
+
+          echo "==> No Mac Catalyst object detected"
+
+      - name: Build Generals
+        script: |
+          set -e
+
           export VCPKG_ROOT="$HOME/vcpkg"
           export VULKAN_SDK="$HOME/VulkanSDK/macOS"
-          cmake --build build/ios-vulkan --config RelWithDebInfo --target z_generals
 
-      - name: Package
+          export VCPKG_DEFAULT_TRIPLET="arm64-ios"
+          export VCPKG_TARGET_TRIPLET="arm64-ios"
+
+          export VCPKG_OSX_SYSROOT="iphoneos"
+          export VCPKG_CMAKE_SYSTEM_NAME="iOS"
+          export VCPKG_OSX_DEPLOYMENT_TARGET="16.0"
+          export VCPKG_OSX_ARCHITECTURES="arm64"
+
+          export CMAKE_OSX_SYSROOT="iphoneos"
+          export CMAKE_OSX_DEPLOYMENT_TARGET="16.0"
+          export CMAKE_OSX_ARCHITECTURES="arm64"
+
+          cmake --build build/ios-vulkan \
+            --config RelWithDebInfo \
+            --target z_generals \
+            --parallel "$(sysctl -n hw.ncpu)"
+
+      - name: Verify engine binary
         script: |
+          set -e
+
+          GAME_BIN="build/ios-vulkan/GeneralsMD/GeneralsXZH.app/GeneralsXZH"
+
+          test -f "$GAME_BIN"
+
+          echo "==> GeneralsXZH binary created"
+
+          file "$GAME_BIN"
+
+          if ! file "$GAME_BIN" | grep -qi "arm64"; then
+            echo "ERROR: final executable is not arm64."
+            exit 1
+          fi
+
+      - name: Package iOS IPA
+        script: |
+          set -e
+
+          export GX_TEAM_ID="${GX_TEAM_ID:-7S264298H8}"
+          export GX_BUNDLE_ID="${GX_BUNDLE_ID:-me.ammaar.generalszh}"
+
           ./scripts/build/ios/package-ios-zh.sh
+
+      - name: Verify IPA
+        script: |
+          set -e
+
+          IPA=$(find . -type f -name "*.ipa" | head -1)
+
+          test -n "$IPA"
+          test -f "$IPA"
+
+          echo "========================================"
+          echo "IPA CREATED SUCCESSFULLY"
+          echo "========================================"
+
+          ls -lh "$IPA"
 
     artifacts:
       - "**/*.ipa"
+      - "**/*.xcarchive"
