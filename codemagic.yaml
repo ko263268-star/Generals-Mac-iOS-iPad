@@ -1,0 +1,36 @@
+workflows:
+  ios-vulkan:
+    name: Generals iOS Vulkan
+    instance_type: mac_mini_m1
+    max_build_duration: 120
+
+    environment:
+      xcode: latest
+
+    scripts:
+      - name: Initialize submodules
+        script: |
+          git submodule update --init --recursive
+
+      - name: Fetch MoltenVK
+        script: |
+          ./scripts/build/ios/fetch-moltenvk.sh
+
+      - name: Stage fonts
+        script: |
+          ./scripts/build/ios/stage-fonts.sh
+
+      - name: Configure
+        script: |
+          cmake --preset ios-vulkan
+
+      - name: Build
+        script: |
+          cmake --build build/ios-vulkan --config Release --target z_generals
+
+      - name: Package unsigned IPA
+        script: |
+          ./scripts/build/ios/package-ios-zh.sh
+
+    artifacts:
+      - "**/*.ipa"
