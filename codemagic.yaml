@@ -1,35 +1,45 @@
 workflows:
   ios-vulkan:
-    name: iOS Vulkan
-    max_build_duration: 90
-    instance_type: mac_mini_m1
+    name: Generals iOS Vulkan
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+
     environment:
-      xcode: 16.0
+      xcode: latest
       vars:
-        GX_TEAM_ID: 7S264298H8
-        GX_BUNDLE_ID: me.ammaar.generalszh
+        VCPKG_FORCE_SYSTEM_BINARIES: "1"
+        VCPKG_FEATURE_FLAGS: "versions,manifests"
+        VCPKG_DEFAULT_TRIPLET: "arm64-ios"
+        VCPKG_OSX_SYSROOT: "iphoneos"
+
     scripts:
-      - name: Checkout submodules
+      - name: Initialize submodules
         script: |
           git submodule update --init --recursive
-      - name: Install xcodegen
+
+      - name: Fetch MoltenVK
         script: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          fi
-      - name: Configure iOS Vulkan preset
+          chmod +x scripts/build/ios/fetch-moltenvk.sh
+          ./scripts/build/ios/fetch-moltenvk.sh
+
+      - name: Stage fonts
+        script: |
+          chmod +x scripts/build/ios/stage-fonts.sh
+          ./scripts/build/ios/stage-fonts.sh
+
+      - name: Configure iOS Vulkan
         script: |
           cmake --preset ios-vulkan
-      - name: Build iOS Vulkan target
+
+      - name: Build
         script: |
-          cmake --build build/ios-vulkan --parallel
-      - name: Prepare runtime dependencies
+          cmake --build build/ios-vulkan --config Release --parallel
+
+      - name: Package IPA
         script: |
-          ./scripts/build/ios/fetch-moltenvk.sh
-          ./scripts/build/ios/stage-fonts.sh
-      - name: Package signed IPA
-        script: |
+          chmod +x scripts/build/ios/package-ios-zh.sh
           ./scripts/build/ios/package-ios-zh.sh
+
     artifacts:
-      - build/ios-package/**/*.ipa
-      - build/ios-package/**/*.app
+      - build/ios-vulkan/**/*.ipa
+      - build/ios-vulkan/**/*.app
