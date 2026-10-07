@@ -18,11 +18,39 @@ workflows:
           "$HOME/vcpkg/bootstrap-vcpkg.sh"
           export VCPKG_ROOT="$HOME/vcpkg"
 
+      - name: Install LunarG Vulkan SDK
+        script: |
+          SDK_VERSION="1.4.363.0"
+          SDK_ROOT="$HOME/VulkanSDK"
+
+          curl -fL \
+            "https://sdk.lunarg.com/sdk/download/${SDK_VERSION}/mac/vulkansdk-macos-${SDK_VERSION}.zip" \
+            -o /tmp/vulkan-sdk.zip
+
+          unzip -q /tmp/vulkan-sdk.zip -d /tmp/vulkan-sdk
+
+          INSTALLER=$(find /tmp/vulkan-sdk -path "*/Contents/MacOS/*" -type f | head -1)
+
+          chmod +x "$INSTALLER"
+
+          "$INSTALLER" \
+            --root "$SDK_ROOT" \
+            --accept-licenses \
+            --default-answer \
+            --confirm-command \
+            install
+
+          export VULKAN_SDK="$SDK_ROOT/macOS"
+
+          echo "VULKAN_SDK=$VULKAN_SDK"
+
+          test -f "$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
+
       - name: Initialize submodules
         script: |
           git submodule update --init --recursive
 
-      - name: Fetch MoltenVK
+      - name: Fetch MoltenVK runtime
         script: |
           ./scripts/build/ios/fetch-moltenvk.sh
 
@@ -33,11 +61,13 @@ workflows:
       - name: Configure
         script: |
           export VCPKG_ROOT="$HOME/vcpkg"
+          export VULKAN_SDK="$HOME/VulkanSDK/macOS"
           cmake --preset ios-vulkan
 
       - name: Build
         script: |
           export VCPKG_ROOT="$HOME/vcpkg"
+          export VULKAN_SDK="$HOME/VulkanSDK/macOS"
           cmake --build build/ios-vulkan --config RelWithDebInfo --target z_generals
 
       - name: Package
