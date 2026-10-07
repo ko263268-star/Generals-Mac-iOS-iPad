@@ -1,35 +1,56 @@
 workflows:
   ios-vulkan:
     name: iOS Vulkan
-    max_build_duration: 90
-    instance_type: mac_mini_m1
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: codemagic
+
     environment:
-      xcode: 16.0
+      xcode: latest
+
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: me.ammaar.generalszh
+
       vars:
-        GX_TEAM_ID: 7S264298H8
-        GX_BUNDLE_ID: me.ammaar.generalszh
+        GX_TEAM_ID: "7S264298H8"
+        GX_BUNDLE_ID: "me.ammaar.generalszh"
+
     scripts:
       - name: Checkout submodules
         script: |
           git submodule update --init --recursive
-      - name: Install xcodegen
+
+      - name: Install build tools
         script: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          fi
+          brew install xcodegen ninja cmake
+
       - name: Configure iOS Vulkan preset
         script: |
           cmake --preset ios-vulkan
+
       - name: Build iOS Vulkan target
         script: |
           cmake --build build/ios-vulkan --parallel
+
       - name: Prepare runtime dependencies
         script: |
+          chmod +x ./scripts/build/ios/fetch-moltenvk.sh
+          chmod +x ./scripts/build/ios/stage-fonts.sh
           ./scripts/build/ios/fetch-moltenvk.sh
           ./scripts/build/ios/stage-fonts.sh
+
+      - name: Set up iOS code signing
+        script: |
+          xcode-project use-profiles
+
       - name: Package signed IPA
         script: |
+          chmod +x ./scripts/build/ios/package-ios-zh.sh
           ./scripts/build/ios/package-ios-zh.sh
+
     artifacts:
       - build/ios-package/**/*.ipa
       - build/ios-package/**/*.app
